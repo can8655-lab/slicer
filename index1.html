@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slicer Tel Kopma Takip</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3352; --accent: #f97316; --accent-dim: rgba(249,115,22,0.15);
+    --green: #22c55e; --green-dim: rgba(34,197,94,0.12);
+    --red: #ef4444;   --red-dim: rgba(239,68,68,0.12);
+    --yellow: #eab308;--yellow-dim: rgba(234,179,8,0.12);
+    --text: #e8eaf0;  --text2: #8892b0; --text3: #4a5580;
+  }
+  body { background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; }
+
+  .tabs { display:flex; gap:0; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:69px; z-index:90; }
+  .tab-btn { padding:10px 22px; background:transparent; border:none; border-bottom:2px solid transparent; color:var(--text2); font-family:'Inter',sans-serif; font-size:13px; font-weight:500; cursor:pointer; transition:all 0.15s; }
+  .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab-btn:hover:not(.active) { color:var(--text); }
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 24px; display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:100; }
+  .logo-mark { width:36px;height:36px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;color:#fff;flex-shrink:0; }
+  header h1 { font-size:16px;font-weight:700;letter-spacing:-.3px; }
+  header p { font-size:10px;color:var(--text2);margin-top:1px; }
+  .header-right { margin-left:auto;display:flex;gap:12px;align-items:center;flex-wrap:wrap; }
+  .stat-pill { display:flex;flex-direction:column;align-items:flex-end; }
+  .stat-pill .val { font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;line-height:1; }
+  .stat-pill .lbl { font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-top:2px; }
+  .stat-pill.orange .val { color:var(--accent); }
+  .stat-pill.green .val  { color:var(--green); }
+  .stat-pill.red .val    { color:var(--red); }
+
+  .sync-indicator { display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2); }
+  .sync-dot { width:7px;height:7px;border-radius:50%;background:var(--green); }
+  .sync-dot.syncing { background:var(--yellow);animation:pulse 1s infinite; }
+  .sync-dot.error { background:var(--red); }
+
+  .export-btn { display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--green);border:none;border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;white-space:nowrap; }
+  .export-btn:hover { background:#16a34a; }
+
+  main { padding:20px 24px; max-width:1440px; margin:0 auto; }
+  .section-title { font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:14px;display:flex;align-items:center;gap:8px; }
+  .section-title::after { content:'';flex:1;height:1px;background:var(--border); }
+
+  .grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:13px; }
+
+  .card { background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color 0.2s; }
+  .card.active-break { border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 18px rgba(239,68,68,.12); }
+  .card-header { display:flex;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);gap:9px; }
+  .machine-num { font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--accent);min-width:32px; }
+  .machine-name { font-size:12px;font-weight:600;flex:1; }
+  .machine-name span { display:block;font-size:10px;font-weight:400;color:var(--text2);margin-top:1px; }
+  .status-badge { font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:3px 7px;border-radius:20px;border:1px solid; }
+  .status-badge.ok     { color:var(--green);background:var(--green-dim);border-color:rgba(34,197,94,.3); }
+  .status-badge.broken { color:var(--red);background:var(--red-dim);border-color:rgba(239,68,68,.3); }
+
+  .card-body { padding:13px;display:flex;flex-direction:column;gap:10px; }
+  .field-label { font-size:10px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px; }
+  .toggle-group { display:flex;gap:5px; }
+  .toggle-btn { flex:1;padding:7px 4px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text2);font-family:'Inter',sans-serif;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;text-align:center; }
+  .toggle-btn:hover { background:var(--surface2);color:var(--text); }
+  .toggle-btn.active-yes { background:var(--red-dim);border-color:rgba(239,68,68,.4);color:var(--red); }
+  .toggle-btn.active-no  { background:var(--green-dim);border-color:rgba(34,197,94,.4);color:var(--green); }
+  .number-input { display:flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:5px 9px; }
+  .number-input:focus-within { border-color:var(--accent); }
+  .number-input input { background:transparent;border:none;outline:none;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;width:54px;text-align:center; }
+  .number-input .unit { font-size:11px;color:var(--text2); }
+  .number-btn { background:var(--border);border:none;color:var(--text);width:22px;height:22px;border-radius:5px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .12s; }
+  .number-btn:hover { background:var(--text3); }
+  .timer-display { font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--yellow);background:var(--yellow-dim);border:1px solid rgba(234,179,8,.25);padding:6px 11px;border-radius:7px;display:flex;align-items:center;gap:6px; }
+  .timer-dot { width:7px;height:7px;background:var(--yellow);border-radius:50%;animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+  .card-footer { padding:9px 13px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center; }
+  .break-count { font-size:11px;color:var(--text2); }
+  .break-count strong { color:var(--accent);font-family:'JetBrains Mono',monospace; }
+  .log-btn { font-size:11px;font-weight:600;color:var(--text2);background:transparent;border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer;transition:all .15s; }
+  .log-btn:hover { color:var(--accent);border-color:var(--accent); }
+
+  /* CHARTS */
+  .charts-grid { display:grid;grid-template-columns:1fr 1fr;gap:18px; }
+  .chart-card { background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px; }
+  .chart-card h3 { font-size:12px;font-weight:600;color:var(--text2);margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px; }
+  .chart-wrap { position:relative;height:250px; }
+  @media(max-width:900px) { .charts-grid { grid-template-columns:1fr; } }
+
+  /* SUMMARY */
+  .summary-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px; }
+  .kpi-card { background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px; }
+  .kpi-card .k-val { font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:700;line-height:1;margin-bottom:5px; }
+  .kpi-card .k-lbl { font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px; }
+  .kpi-card.orange .k-val { color:var(--accent); }
+  .kpi-card.red    .k-val { color:var(--red); }
+  .kpi-card.green  .k-val { color:var(--green); }
+  .kpi-card.yellow .k-val { color:var(--yellow); }
+  @media(max-width:700px) { .summary-grid { grid-template-columns:1fr 1fr; } }
+
+  /* LOG PANEL */
+  .log-panel { position:fixed;right:0;top:0;bottom:0;width:360px;background:var(--surface);border-left:1px solid var(--border);z-index:200;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease; }
+  .log-panel.open { transform:translateX(0); }
+  .log-panel-header { padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px; }
+  .log-panel-header h2 { font-size:14px;font-weight:700;flex:1; }
+  .close-btn { background:var(--surface2);border:1px solid var(--border);border-radius:6px;width:26px;height:26px;cursor:pointer;color:var(--text2);font-size:17px;display:flex;align-items:center;justify-content:center; }
+  .log-list { flex:1;overflow-y:auto;padding:13px;display:flex;flex-direction:column;gap:8px; }
+  .log-item { background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:11px; }
+  .log-item .log-time { font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);margin-bottom:4px; }
+  .log-item .log-detail { color:var(--text2);line-height:1.5; }
+  .log-item .log-detail b { color:var(--text); }
+  .tag { display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px; }
+  .tag.var { background:var(--red-dim);color:var(--red); }
+  .tag.yok { background:var(--green-dim);color:var(--green); }
+  .log-empty { text-align:center;color:var(--text3);font-size:12px;margin-top:36px; }
+  .overlay { position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;display:none; }
+  .overlay.show { display:block; }
+
+  /* LOADING */
+  .loading-screen { position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:16px; }
+  .loading-screen .spin { width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .loading-screen p { color:var(--text2);font-size:13px; }
+
+  .toast { position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--green);color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:all .3s;pointer-events:none; }
+  .toast.show { opacity:1;transform:translateX(-50%) translateY(0); }
+  .toast.error { background:var(--red); }
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loading">
+  <div class="spin"></div>
+  <p>Veriler yükleniyor...</p>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeLog()"></div>
+<div class="toast" id="toast"></div>
+
+<header>
+  <div class="logo-mark">S</div>
+  <div>
+    <h1>Slicer Tel Kopma Takip</h1>
+    <p>14 Tezgah · Canlı İzleme</p>
+  </div>
+  <div class="header-right">
+    <div class="sync-indicator">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-text">Bağlı</span>
+    </div>
+    <div class="stat-pill orange"><div class="val" id="total-breaks">0</div><div class="lbl">Toplam Kopma</div></div>
+    <div class="stat-pill red">  <div class="val" id="active-breaks">0</div><div class="lbl">Aktif Arıza</div></div>
+    <div class="stat-pill green"><div class="val" id="part-loss-count">0</div><div class="lbl">Parça Kaybı</div></div>
+    <button class="export-btn" onclick="exportToExcel()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Excel'e Aktar
+    </button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('tezgahlar',this)">🏭 Tezgahlar</button>
+  <button class="tab-btn" onclick="switchTab('grafikler',this)">📈 Grafikler</button>
+  <button class="tab-btn" onclick="switchTab('ozet',this)">📌 Özet</button>
+</div>
+
+<div class="log-panel" id="log-panel">
+  <div class="log-panel-header">
+    <div class="machine-num" id="log-machine-num">#01</div>
+    <h2 id="log-panel-title">Geçmiş</h2>
+    <button class="close-btn" onclick="closeLog()">×</button>
+  </div>
+  <div class="log-list" id="log-list"></div>
+</div>
+
+<main>
+  <div class="tab-content active" id="tab-tezgahlar">
+    <div class="section-title">Tezgah Durumu</div>
+    <div class="grid" id="machine-grid"></div>
+  </div>
+
+  <div class="tab-content" id="tab-grafikler">
+    <div class="section-title" style="margin-top:4px">Performans Grafikleri</div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Tezgah Başına Tel Kopma</h3><div class="chart-wrap"><canvas id="chart-breaks"></canvas></div></div>
+      <div class="chart-card"><h3>Parça Kaybı Dağılımı</h3><div class="chart-wrap"><canvas id="chart-partloss"></canvas></div></div>
+      <div class="chart-card"><h3>Ortalama Tamir Süresi (dk)</h3><div class="chart-wrap"><canvas id="chart-repair"></canvas></div></div>
+      <div class="chart-card"><h3>Anlık Tezgah Durumu</h3><div class="chart-wrap"><canvas id="chart-status"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tab-ozet">
+    <div class="section-title" style="margin-top:4px">Sistem Özeti</div>
+    <div class="summary-grid">
+      <div class="kpi-card orange"><div class="k-val" id="kpi-total">0</div><div class="k-lbl">Toplam Tel Kopma</div></div>
+      <div class="kpi-card red">   <div class="k-val" id="kpi-active">0</div><div class="k-lbl">Aktif Arıza</div></div>
+      <div class="kpi-card green"> <div class="k-val" id="kpi-running">14</div><div class="k-lbl">Çalışan Tezgah</div></div>
+      <div class="kpi-card yellow"><div class="k-val" id="kpi-partloss">0</div><div class="k-lbl">Parça Kaybı Olan</div></div>
+      <div class="kpi-card green"> <div class="k-val" id="kpi-noloss">0</div><div class="k-lbl">Kayıpsız Tamir</div></div>
+      <div class="kpi-card orange"><div class="k-val" id="kpi-avg">—</div><div class="k-lbl">Ort. Tamir Süresi (dk)</div></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const SUPABASE_URL = "https://evfvofwgvfcmvlsoqbkw.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2ZnZvZndndmZjbXZsc29xYmt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzYzODEsImV4cCI6MjA5NzE1MjM4MX0.RBxMrldPulSF3heNcGpG8Gd7CG15_ndXgvQa_tlj6YU";
+const HEADERS = { "Content-Type":"application/json", "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` };
+
+const MACHINE_COUNT = 14;
+let state = [];
+let logPanelMachine = null;
+let charts = {};
+const timers = {};
+
+// ─── SUPABASE API ───
+async function sbGet(table, query="") {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, { headers: {...HEADERS, "Prefer":"return=representation"} });
+  return r.json();
+}
+async function sbPatch(table, id, body) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method:"PATCH", headers:{...HEADERS,"Prefer":"return=representation"}, body:JSON.stringify(body)
+  });
+  return r.json();
+}
+async function sbPost(table, body) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method:"POST", headers:{...HEADERS,"Prefer":"return=representation"}, body:JSON.stringify(body)
+  });
+  return r.json();
+}
+
+// ─── LOAD ───
+async function loadState() {
+  setSyncStatus('syncing');
+  try {
+    const rows = await sbGet('machines', '?order=id');
+    state = rows.map(r => ({
+      id: r.id,
+      wireBreak: r.wire_break,
+      partLoss: r.part_loss,
+      mm: r.mm || 0,
+      breakCount: r.break_count || 0,
+      repairTimes: r.repair_times || [],
+      repairStart: null
+    }));
+    document.getElementById('loading').style.display = 'none';
+    setSyncStatus('ok');
+    render();
+  } catch(e) {
+    setSyncStatus('error');
+    showToast('Bağlantı hatası!', true);
+  }
+}
+
+// ─── SAVE MACHINE ───
+async function saveMachine(m) {
+  setSyncStatus('syncing');
+  try {
+    await sbPatch('machines', m.id, {
+      wire_break: m.wireBreak,
+      part_loss: m.partLoss,
+      mm: m.mm,
+      break_count: m.breakCount,
+      repair_times: m.repairTimes,
+      updated_at: new Date().toISOString()
+    });
+    setSyncStatus('ok');
+  } catch(e) { setSyncStatus('error'); }
+}
+
+// ─── SAVE LOG ───
+async function saveLog(entry) {
+  try {
+    await sbPost('logs', entry);
+  } catch(e) { console.error('Log kaydedilemedi', e); }
+}
+
+// ─── LOAD LOGS FOR MACHINE ───
+async function loadLogs(machineId) {
+  try {
+    const rows = await sbGet('logs', `?machine_id=eq.${machineId}&order=created_at.desc&limit=50`);
+    return rows;
+  } catch(e) { return []; }
+}
+
+// ─── SYNC STATUS ───
+function setSyncStatus(s) {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-text');
+  dot.className = 'sync-dot' + (s==='syncing'?' syncing':s==='error'?' error':'');
+  txt.textContent = s==='syncing'?'Kaydediliyor...':s==='error'?'Bağlantı Hatası':'Senkronize';
+}
+
+// ─── RENDER ───
+function render() {
+  const grid = document.getElementById('machine-grid');
+  grid.innerHTML = '';
+  let totalBreaks=0, activeBreaks=0, partLossCount=0;
+
+  state.forEach(m => {
+    totalBreaks += m.breakCount;
+    if (m.wireBreak) activeBreaks++;
+    if (m.partLoss === 'var') partLossCount++;
+
+    const card = document.createElement('div');
+    card.className = `card${m.wireBreak?' active-break':''}`;
+
+    let timerHTML = '';
+    if (m.wireBreak && m.repairStart) {
+      const el = Math.floor((Date.now()-m.repairStart)/1000);
+      timerHTML = `<div><div class="field-label">Geçen Süre</div>
+        <div class="timer-display" id="timer-${m.id}">
+          <div class="timer-dot"></div>${p2(Math.floor(el/60))}:${p2(el%60)}</div></div>`;
+    } else if (m.wireBreak) {
+      timerHTML = `<div><div class="field-label">Geçen Süre</div>
+        <div class="timer-display" id="timer-${m.id}"><div class="timer-dot"></div>00:00</div></div>`;
+    }
+
+    const partHTML = m.wireBreak ? `
+      <div><div class="field-label">Parça Kaybı</div>
+        <div class="toggle-group">
+          <button class="toggle-btn ${m.partLoss==='yok'?'active-no':''}"  onclick="setPartLoss(${m.id},'yok')">✓ Yok</button>
+          <button class="toggle-btn ${m.partLoss==='var'?'active-yes':''}" onclick="setPartLoss(${m.id},'var')">✕ Var</button>
+        </div></div>
+      ${m.partLoss==='var'?`<div><div class="field-label">Kayıp Miktarı</div>
+        <div class="number-input">
+          <button class="number-btn" onclick="chgMM(${m.id},-0.5)">−</button>
+          <input type="number" id="mm-${m.id}" value="${m.mm}" min="0" step="0.5" oninput="setMM(${m.id},this.value)">
+          <span class="unit">mm</span>
+          <button class="number-btn" onclick="chgMM(${m.id},0.5)">+</button>
+        </div></div>`:''}` : '';
+
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="machine-num">#${p2(m.id)}</div>
+        <div class="machine-name">Slicer Tezgah ${m.id}<span>EDM Tel Erozyon</span></div>
+        <div class="status-badge ${m.wireBreak?'broken':'ok'}">${m.wireBreak?'⚡ Arıza':'● Çalışıyor'}</div>
+      </div>
+      <div class="card-body">
+        <div><div class="field-label">Tel Kopma</div>
+          <div class="toggle-group">
+            <button class="toggle-btn ${m.wireBreak?'active-yes':''}"  onclick="setWire(${m.id},true)">✕ Koptu</button>
+            <button class="toggle-btn ${!m.wireBreak?'active-no':''}" onclick="setWire(${m.id},false)">✓ Normal</button>
+          </div></div>
+        ${timerHTML}${partHTML}
+      </div>
+      <div class="card-footer">
+        <div class="break-count">Kopma: <strong>${m.breakCount}</strong></div>
+        <button class="log-btn" onclick="openLog(${m.id})">Geçmiş ›</button>
+      </div>`;
+
+    grid.appendChild(card);
+  });
+
+  document.getElementById('total-breaks').textContent = totalBreaks;
+  document.getElementById('active-breaks').textContent = activeBreaks;
+  document.getElementById('part-loss-count').textContent = partLossCount;
+}
+
+function p2(n) { return String(n).padStart(2,'0'); }
+
+// ─── WIRE BREAK ───
+async function setWire(id, val) {
+  const m = state[id-1];
+  if (val && !m.wireBreak) {
+    m.wireBreak = true;
+    m.repairStart = Date.now();
+    m.partLoss = null;
+    m.mm = 0;
+    m.breakCount++;
+    startTimer(id);
+    render();
+    await saveMachine(m);
+    await saveLog({ machine_id:id, time:new Date().toLocaleString('tr-TR'), type:'Kopma Başladı', duration:'—', part_loss:'—', mm:'—', detail:`Tezgah #${p2(id)} devredışı.` });
+  } else if (!val && m.wireBreak) {
+    const elapsed = m.repairStart ? Math.floor((Date.now()-m.repairStart)/1000) : 0;
+    const repMin = Math.floor(elapsed/60);
+    const repSec = elapsed%60;
+    m.repairTimes.push(repMin);
+    m.wireBreak = false;
+    stopTimer(id);
+    const prevStart = m.repairStart;
+    m.repairStart = null;
+    render();
+    await saveMachine(m);
+    await saveLog({
+      machine_id: id,
+      time: new Date().toLocaleString('tr-TR'),
+      type: 'Tamir Tamamlandı',
+      duration: `${repMin}dk ${repSec}sn`,
+      part_loss: m.partLoss==='var'?'Var':'Yok',
+      mm: m.partLoss==='var'?String(m.mm):'—',
+      detail: `Süre: ${repMin}dk ${repSec}sn | Parça: ${m.partLoss==='var'?m.mm+'mm':'Kayıp Yok'}`
+    });
+  }
+}
+
+async function setPartLoss(id, val) {
+  const m = state[id-1];
+  m.partLoss = val;
+  if(val==='yok') m.mm=0;
+  render();
+  await saveMachine(m);
+}
+
+async function setMM(id, val) {
+  state[id-1].mm = parseFloat(val)||0;
+  await saveMachine(state[id-1]);
+}
+
+async function chgMM(id, d) {
+  const m = state[id-1];
+  m.mm = Math.max(0, parseFloat((m.mm+d).toFixed(1)));
+  render();
+  await saveMachine(m);
+}
+
+function startTimer(id) {
+  if(timers[id]) clearInterval(timers[id]);
+  state[id-1].repairStart = state[id-1].repairStart || Date.now();
+  timers[id] = setInterval(()=>{
+    const el = document.getElementById(`timer-${id}`);
+    if(el && state[id-1].repairStart) {
+      const e = Math.floor((Date.now()-state[id-1].repairStart)/1000);
+      el.innerHTML = `<div class="timer-dot"></div>${p2(Math.floor(e/60))}:${p2(e%60)}`;
+    }
+  },1000);
+}
+function stopTimer(id) { if(timers[id]){clearInterval(timers[id]);delete timers[id];} }
+
+// ─── LOG PANEL ───
+async function openLog(id) {
+  logPanelMachine = id;
+  document.getElementById('log-machine-num').textContent = `#${p2(id)}`;
+  document.getElementById('log-panel-title').textContent = `Tezgah ${id} Geçmişi`;
+  document.getElementById('log-list').innerHTML = '<div class="log-empty">Yükleniyor...</div>';
+  document.getElementById('log-panel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+
+  const entries = await loadLogs(id);
+  const list = document.getElementById('log-list');
+  if(!entries.length){ list.innerHTML='<div class="log-empty">Henüz kayıt yok.</div>'; return; }
+  list.innerHTML = entries.map(e=>`
+    <div class="log-item">
+      <div class="log-time">${e.time}</div>
+      <div class="log-detail">
+        <b>${e.type}</b> — ${e.detail}
+        ${e.part_loss&&e.part_loss!=='—'?`<span class="tag ${e.part_loss==='Var'?'var':'yok'}">${e.part_loss==='Var'?'Parça Kaybı: '+e.mm:'Kayıp Yok'}</span>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function closeLog() {
+  document.getElementById('log-panel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+// ─── TABS ───
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='grafikler') setTimeout(renderCharts,50);
+  if(name==='ozet') renderSummary();
+}
+
+// ─── CHARTS ───
+const COPTS = {
+  responsive:true, maintainAspectRatio:false,
+  plugins:{ legend:{ labels:{ color:'#8892b0', font:{family:'Inter',size:11} } } },
+  scales:{ x:{ticks:{color:'#4a5580',font:{size:10}},grid:{color:'rgba(46,51,82,0.5)'}}, y:{ticks:{color:'#4a5580',font:{size:10}},grid:{color:'rgba(46,51,82,0.5)'},beginAtZero:true} }
+};
+
+function renderCharts() {
+  const labels = state.map(m=>`T#${p2(m.id)}`);
+  Object.values(charts).forEach(c=>c.destroy()); charts={};
+
+  charts.breaks = new Chart(document.getElementById('chart-breaks'),{type:'bar',data:{labels,datasets:[{label:'Kopma',data:state.map(m=>m.breakCount),backgroundColor:'rgba(249,115,22,0.7)',borderColor:'#f97316',borderWidth:1,borderRadius:4}]},options:COPTS});
+  charts.partloss = new Chart(document.getElementById('chart-partloss'),{type:'bar',data:{labels,datasets:[{label:'Parça Kaybı',data:state.map(m=>m.partLoss==='var'?1:0),backgroundColor:'rgba(239,68,68,0.65)',borderColor:'#ef4444',borderWidth:1,borderRadius:4}]},options:COPTS});
+  charts.repair = new Chart(document.getElementById('chart-repair'),{type:'bar',data:{labels,datasets:[{label:'Ort. Tamir (dk)',data:state.map(m=>m.repairTimes.length?(m.repairTimes.reduce((a,b)=>a+b,0)/m.repairTimes.length).toFixed(1):0),backgroundColor:'rgba(234,179,8,0.65)',borderColor:'#eab308',borderWidth:1,borderRadius:4}]},options:COPTS});
+  const active=state.filter(m=>m.wireBreak).length;
+  charts.status = new Chart(document.getElementById('chart-status'),{type:'doughnut',data:{labels:['Çalışıyor','Arıza'],datasets:[{data:[MACHINE_COUNT-active,active],backgroundColor:['rgba(34,197,94,0.75)','rgba(239,68,68,0.75)'],borderColor:['#22c55e','#ef4444'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8892b0',font:{family:'Inter',size:12}}}}}});
+}
+
+// ─── SUMMARY ───
+function renderSummary() {
+  const total=state.reduce((a,m)=>a+m.breakCount,0);
+  const active=state.filter(m=>m.wireBreak).length;
+  const partL=state.filter(m=>m.partLoss==='var').length;
+  const noLoss=state.filter(m=>m.partLoss==='yok').length;
+  const allT=state.flatMap(m=>m.repairTimes);
+  const avg=allT.length?(allT.reduce((a,b)=>a+b,0)/allT.length).toFixed(1):'—';
+  document.getElementById('kpi-total').textContent=total;
+  document.getElementById('kpi-active').textContent=active;
+  document.getElementById('kpi-running').textContent=MACHINE_COUNT-active;
+  document.getElementById('kpi-partloss').textContent=partL;
+  document.getElementById('kpi-noloss').textContent=noLoss;
+  document.getElementById('kpi-avg').textContent=avg;
+}
+
+// ─── EXCEL ───
+function exportToExcel() {
+  const wb = XLSX.utils.book_new();
+  const now = new Date().toLocaleString('tr-TR');
+  const durum=[['TEZGAH','DURUM','TEL KOPMA','PARÇA KAYBI','KAYIP mm','ORT. TAMİR dk','TOPLAM KOPMA']];
+  state.forEach(m=>{
+    const avg=m.repairTimes.length?(m.repairTimes.reduce((a,b)=>a+b,0)/m.repairTimes.length).toFixed(1):'—';
+    durum.push([`#${p2(m.id)} Slicer Tezgah ${m.id}`,m.wireBreak?'ARIZA':'ÇALIŞIYOR',m.wireBreak?'KOPTU':'NORMAL',m.partLoss==='var'?'VAR':m.partLoss==='yok'?'YOK':'—',m.partLoss==='var'?m.mm:'—',avg,m.breakCount]);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(durum);
+  ws['!cols']=[{wch:24},{wch:14},{wch:13},{wch:13},{wch:11},{wch:16},{wch:15}];
+  XLSX.utils.book_append_sheet(wb,ws,'Anlık Durum');
+  XLSX.writeFile(wb,`Slicer_${new Date().toLocaleDateString('tr-TR').replace(/\./g,'-')}.xlsx`);
+  showToast('✓ Excel indirildi!');
+}
+
+function showToast(msg, err=false) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(err?' error':'');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ─── AUTO REFRESH (her 30 sn) ───
+setInterval(async ()=>{
+  const rows = await sbGet('machines','?order=id');
+  rows.forEach(r=>{
+    const m=state[r.id-1];
+    if(!m) return;
+    const wasBreak=m.wireBreak;
+    m.wireBreak=r.wire_break;
+    m.partLoss=r.part_loss;
+    m.mm=r.mm||0;
+    m.breakCount=r.break_count||0;
+    m.repairTimes=r.repair_times||[];
+    if(!wasBreak && m.wireBreak) { m.repairStart=Date.now(); startTimer(m.id); }
+    if(wasBreak && !m.wireBreak) stopTimer(m.id);
+  });
+  render();
+}, 30000);
+
+// ─── INIT ───
+loadState();
+</script>
+</body>
+</html>
